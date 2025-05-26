@@ -49,7 +49,7 @@ async function setupGame() {
   // player.y = app.screen.height - 950;
 
   // Масштаб — увеличь, если нужно
-  player.scale.set(0.2);
+  player.scale.set(1);
 
   app.stage.addChild(player);
 
@@ -122,8 +122,14 @@ async function setupGame() {
     }
 
     // Сенсорное управление
-    if (moveDirection === "left") player.x -= 5;
-    if (moveDirection === "right") player.x += 5;
+    if (moveDirection === "left") {
+      player.x -= 5;
+      player.scale.x = -Math.abs(player.scale.x);
+    }
+    if (moveDirection === "right") {
+      player.x += 5;
+      player.scale.x = Math.abs(player.scale.x);
+    }
 
     // Гравитация
     vy += gravity;
