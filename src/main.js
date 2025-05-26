@@ -1,57 +1,47 @@
-import { Assets } from "pixi.js";
 import * as PIXI from "pixi.js";
+import { Assets } from "pixi.js";
+
+const app = new PIXI.Application({
+  resizeTo: window,
+  backgroundColor: 0x1099bb,
+});
+document.body.appendChild(app.view);
 
 const basePath = import.meta.env.BASE_URL || "/";
 
-let app;
+const idleFrames = [];
+const runFrames = [];
 
-function resizeApp() {
-  const width = window.innerWidth;
-  const height = window.innerHeight;
+let playerIdle;
+let playerRun;
+let currentPlayer;
 
-  if (app) {
-    app.renderer.resize(width, height);
-  } else {
-    app = new PIXI.Application({
-      width,
-      height,
-      backgroundColor: 0x1099bb,
-    });
-    document.body.appendChild(app.view);
-    setupGame();
-    loadIdleAnimation();
-  }
-}
+let isMoving = false;
+let moveDirection = 0; // 1 вправо, -1 влево, 0 — стоим
 
-window.addEventListener("resize", resizeApp);
-resizeApp(); // запуск
+// Вертикальный сдвиг позиционирования игрока
+const playerOffsetY = 100; // смещение по Y для игрока
+
+// Для прыжка
+let isJumping = false;
+let velocityY = 0;
+const gravity = 0.8;
+const jumpPower = 15;
 
 async function setupGame() {
-  const idleFrames = [];
-
   for (let i = 1; i <= 24; i++) {
-    const frameNumber = i.toString().padStart(5, "0"); // '01', '02'...
+    const frameNumber = i.toString().padStart(5, "0");
     const path = `${basePath}assets/idle/frame_${frameNumber}.png`;
-    // const path = `/assets/idle/frame_${frameNumber}.png`;
     const texture = await Assets.load(path);
     idleFrames.push(texture);
   }
 
-  // Создаём анимированного спрайта
-  const player = new PIXI.AnimatedSprite(idleFrames);
-  player.animationSpeed = 0.3;
-  player.loop = true;
-  player.play();
-
-  // Устанавливаем якорь по центру и позицию
-  player.anchor.set(0.4, -0.05); // центр по горизонтали и чуть ниже по вертикали
-  player.x = app.screen.width / 2;
-  // player.y = app.screen.height - 950;
-
-  // Масштаб — увеличь, если нужно
-  player.scale.set(1);
-
-  app.stage.addChild(player);
+  for (let i = 1; i <= 20; i++) {
+    const frameNumber = i.toString().padStart(5, "0");
+    const path = `${basePath}assets/run/frame_${frameNumber}.png`;
+    const texture = await Assets.load(path);
+    runFrames.push(texture);
+  }
 
   const ground = new PIXI.Graphics();
   ground.beginFill(0x00ff00);
@@ -60,86 +50,160 @@ async function setupGame() {
   ground.y = app.screen.height - 50;
   app.stage.addChild(ground);
 
-  let vy = 0;
-  const gravity = 1;
-  let onGround = false;
+  playerIdle = new PIXI.AnimatedSprite(idleFrames);
+  playerRun = new PIXI.AnimatedSprite(runFrames);
 
-  // --- Управление ---
-  const keys = {};
-  let moveDirection = null; // 'left' | 'right'
-  let touchStartY = null;
+  playerIdle.animationSpeed = 0.3;
+  playerIdle.loop = true;
+  playerIdle.anchor.set(0.5);
+  playerIdle.x = app.screen.width / 2;
+  playerIdle.y = app.screen.height - playerOffsetY;
+  playerIdle.scale.set(1);
 
-  // Клавиатура
-  window.addEventListener("keydown", (e) => (keys[e.code] = true));
-  window.addEventListener("keyup", (e) => (keys[e.code] = false));
+  playerRun.animationSpeed = 0.4;
+  playerRun.loop = true;
+  playerRun.anchor.set(0.5);
+  playerRun.x = app.screen.width / 2;
+  playerRun.y = app.screen.height - playerOffsetY;
+  playerRun.scale.set(1);
 
-  // Сенсорное управление
-  window.addEventListener("touchstart", (e) => {
-    const x = e.touches[0].clientX;
-    const y = e.touches[0].clientY;
-    touchStartY = y;
+  currentPlayer = playerIdle;
+  currentPlayer.play();
+  app.stage.addChild(currentPlayer);
 
-    if (x < window.innerWidth / 2) {
-      moveDirection = "left";
-    } else {
-      moveDirection = "right";
+  setupControls();
+  setupTouchControls();
+
+  app.ticker.add(gameLoop);
+}
+
+function switchAnimation(toRun) {
+  if (toRun && currentPlayer !== playerRun) {
+    app.stage.removeChild(currentPlayer);
+    currentPlayer.stop();
+
+    currentPlayer = playerRun;
+    currentPlayer.x = playerIdle.x;
+    currentPlayer.y = playerIdle.y;
+    currentPlayer.scale.x = playerIdle.scale.x;
+    currentPlayer.play();
+    app.stage.addChild(currentPlayer);
+  } else if (!toRun && currentPlayer !== playerIdle) {
+    app.stage.removeChild(currentPlayer);
+    currentPlayer.stop();
+
+    currentPlayer = playerIdle;
+    currentPlayer.x = playerRun.x;
+    currentPlayer.y = playerRun.y;
+    currentPlayer.scale.x = playerRun.scale.x;
+    currentPlayer.play();
+    app.stage.addChild(currentPlayer);
+  }
+}
+
+function setupControls() {
+  window.addEventListener("keydown", (e) => {
+    const step = 5;
+    if (e.code === "ArrowRight") {
+      currentPlayer.x += step;
+      currentPlayer.scale.x = Math.abs(currentPlayer.scale.x);
+      switchAnimation(true);
+      isMoving = true;
+      moveDirection = 1;
+    } else if (e.code === "ArrowLeft") {
+      currentPlayer.x -= step;
+      currentPlayer.scale.x = -Math.abs(currentPlayer.scale.x);
+      switchAnimation(true);
+      isMoving = true;
+      moveDirection = -1;
+    }
+
+    if (["ArrowUp", "KeyW", "Space"].includes(e.code) && !isJumping) {
+      isJumping = true;
+      velocityY = -jumpPower;
     }
   });
 
-  window.addEventListener("touchend", (e) => {
-    moveDirection = null;
-    touchStartY = null;
-  });
-
-  window.addEventListener("touchmove", (e) => {
-    if (!touchStartY) return;
-
-    const y = e.touches[0].clientY;
-    const deltaY = touchStartY - y;
-
-    if (deltaY > 50 && onGround) {
-      // свайп вверх
-      vy = -20;
-      onGround = false;
-      touchStartY = null; // чтобы не прыгал повторно
-    }
-  });
-
-  // Цикл
-  app.ticker.add(() => {
-    // Клавиатура
-    if (keys["ArrowRight"] || keys["KeyD"]) {
-      player.x += 5;
-      player.scale.x = Math.abs(player.scale.x);
-    }
-    if (keys["ArrowLeft"] || keys["KeyA"]) {
-      player.x -= 5;
-      player.scale.x = -Math.abs(player.scale.x);
-    }
-    if ((keys["ArrowUp"] || keys["KeyW"] || keys["Space"]) && onGround) {
-      vy = -20;
-      onGround = false;
-    }
-
-    // Сенсорное управление
-    if (moveDirection === "left") {
-      player.x -= 5;
-      player.scale.x = -Math.abs(player.scale.x);
-    }
-    if (moveDirection === "right") {
-      player.x += 5;
-      player.scale.x = Math.abs(player.scale.x);
-    }
-
-    // Гравитация
-    vy += gravity;
-    player.y += vy;
-
-    // Коллизия с землёй
-    if (player.y + player.height >= ground.y) {
-      player.y = ground.y - player.height;
-      vy = 0;
-      onGround = true;
+  window.addEventListener("keyup", (e) => {
+    if (e.code === "ArrowRight" || e.code === "ArrowLeft") {
+      isMoving = false;
+      moveDirection = 0;
+      switchAnimation(false);
     }
   });
 }
+
+// Для распознавания свайпа вверх
+let touchStartY = null;
+let touchStartX = null;
+
+function setupTouchControls() {
+  app.view.addEventListener("pointerdown", (e) => {
+    touchStartY = e.clientY;
+    touchStartX = e.clientX;
+
+    // Тап по левой или правой половине экрана
+    if (e.clientX < app.screen.width / 2) {
+      // Лево
+      moveDirection = -1;
+      isMoving = true;
+      currentPlayer.scale.x = -Math.abs(currentPlayer.scale.x);
+      switchAnimation(true);
+    } else {
+      // Право
+      moveDirection = 1;
+      isMoving = true;
+      currentPlayer.scale.x = Math.abs(currentPlayer.scale.x);
+      switchAnimation(true);
+    }
+  });
+
+  app.view.addEventListener("pointerup", (e) => {
+    if (touchStartY !== null) {
+      const dy = touchStartY - e.clientY;
+      const dx = e.clientX - touchStartX;
+
+      const swipeThreshold = 30; // минимальная длина свайпа для распознавания
+
+      if (dy > swipeThreshold && Math.abs(dy) > Math.abs(dx)) {
+        // Свайп вверх
+        if (!isJumping) {
+          isJumping = true;
+          velocityY = -jumpPower;
+        }
+      } else {
+        // Если не свайп, то просто прекращаем движение по тапу
+        isMoving = false;
+        moveDirection = 0;
+        switchAnimation(false);
+      }
+    }
+    touchStartY = null;
+    touchStartX = null;
+  });
+}
+
+function gameLoop(delta) {
+  const step = 5;
+
+  // Горизонтальное движение
+  if (isMoving && moveDirection !== 0) {
+    currentPlayer.x += step * moveDirection;
+  }
+
+  // Прыжок - простая физика
+  if (isJumping) {
+    currentPlayer.y += velocityY;
+    velocityY += gravity;
+
+    // Столкновение с землёй
+    const groundY = app.screen.height - playerOffsetY;
+    if (currentPlayer.y >= groundY) {
+      currentPlayer.y = groundY;
+      isJumping = false;
+      velocityY = 0;
+    }
+  }
+}
+
+setupGame();
