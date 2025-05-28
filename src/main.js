@@ -279,8 +279,9 @@ function spawnCoin() {
   coin.play();
   coin.anchor.set(0.5);
   coin.x = Math.random() * app.screen.width;
-  coin.y = -30; // чуть выше экрана
+  coin.y = -30;
   coin.vy = 2 + Math.random() * 2;
+  coin.collected = false;
   app.stage.addChild(coin);
   coins.push(coin);
 }
@@ -317,26 +318,45 @@ function gameLoop(delta) {
   // Обработка падения монеток
   for (let i = coins.length - 1; i >= 0; i--) {
     const coin = coins[i];
-    coin.y += coin.vy;
 
-    // Столкновение с игроком
-    const dx = coin.x - currentPlayer.x;
-    const dy = coin.y - currentPlayer.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    const hitRadius = 50;
+    if (!coin.collected) {
+      coin.y += coin.vy;
 
-    if (distance < hitRadius) {
-      app.stage.removeChild(coin);
-      coins.splice(i, 1);
-      score++;
-      scoreText.text = getScoreText(score);
-      continue;
-    }
+      const dx = coin.x - currentPlayer.x;
+      const dy = coin.y - currentPlayer.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      const hitRadius = 50;
 
-    // Касание земли
-    if (coin.y >= app.screen.height - 50) {
-      app.stage.removeChild(coin);
-      coins.splice(i, 1);
+      // Сбор монетки
+      if (distance < hitRadius) {
+        coin.collected = true;
+        score++;
+        scoreText.text = getScoreText(score);
+
+        const collectAnim = new PIXI.AnimatedSprite(coinCollectFrames);
+        collectAnim.animationSpeed = 0.5;
+        collectAnim.loop = false;
+        collectAnim.anchor.set(0.5);
+        collectAnim.x = coin.x;
+        collectAnim.y = coin.y;
+
+        collectAnim.onComplete = () => {
+          app.stage.removeChild(collectAnim);
+        };
+
+        app.stage.addChild(collectAnim);
+        collectAnim.play();
+
+        app.stage.removeChild(coin);
+        coins.splice(i, 1);
+        continue;
+      }
+
+      // Падение на землю
+      if (coin.y >= app.screen.height - 50) {
+        app.stage.removeChild(coin);
+        coins.splice(i, 1);
+      }
     }
   }
 }
