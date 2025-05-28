@@ -139,8 +139,12 @@ let touchStartX = null;
 
 function setupTouchControls() {
   app.view.addEventListener("pointerdown", (e) => {
-    touchStartY = e.clientY;
-    touchStartX = e.clientX;
+    activeTouches.set(e.pointerId, {
+      startX: e.clientX,
+      startY: e.clientY,
+      currentX: e.clientX,
+      currentY: e.clientY,
+    });
 
     // Тап по левой или правой половине экрана
     if (e.clientX < app.screen.width / 2) {
@@ -158,28 +162,42 @@ function setupTouchControls() {
     }
   });
 
+  app.view.addEventListener("pointermove", (e) => {
+    const touch = activeTouches.get(e.pointerId);
+    if (touch) {
+      touch.currentX = e.clientX;
+      touch.currentY = e.clientY;
+    }
+  });
+
   app.view.addEventListener("pointerup", (e) => {
-    if (touchStartY !== null) {
-      const dy = touchStartY - e.clientY;
-      const dx = e.clientX - touchStartX;
+    const touch = activeTouches.get(e.pointerId);
+    if (touch) {
+      const dx = touch.currentX - touch.startX;
+      const dy = touch.startY - touch.currentY;
 
       const swipeThreshold = 30; // минимальная длина свайпа для распознавания
 
+      // Свайп вверх
       if (dy > swipeThreshold && Math.abs(dy) > Math.abs(dx)) {
-        // Свайп вверх
         if (!isJumping) {
           isJumping = true;
           velocityY = -jumpPower;
         }
-      } else {
-        // Если не свайп, то просто прекращаем движение по тапу
-        isMoving = false;
-        moveDirection = 0;
+      }
+
+      activeTouches.delete(e.pointerId);
+    }
+
+    if (activeTouches.size === 0) {
+      moveDirection = 0;
+      isMoving = false;
         switchAnimation(false);
       }
-    }
-    touchStartY = null;
-    touchStartX = null;
+  });
+
+  app.view.addEventListener("pointercancel", (e) => {
+    activeTouches.delete(e.pointerId);
   });
 }
 
