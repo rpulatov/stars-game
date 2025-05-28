@@ -11,9 +11,12 @@ const basePath = import.meta.env.BASE_URL || "/";
 
 const idleFrames = [];
 const runFrames = [];
+const jumpFrames = [];
+const activeTouches = new Map();
 
 let playerIdle;
 let playerRun;
+let playerJump;
 let currentPlayer;
 
 let isMoving = false;
@@ -43,6 +46,13 @@ async function setupGame() {
     runFrames.push(texture);
   }
 
+  for (let i = 1; i <= 5; i++) {
+    const frameNumber = i.toString().padStart(5, "0");
+    const path = `${basePath}assets/jump/frame_${frameNumber}.png`;
+    const texture = await Assets.load(path);
+    jumpFrames.push(texture);
+  }
+
   const ground = new PIXI.Graphics();
   ground.beginFill(0x00ff00);
   ground.drawRect(0, 0, app.screen.width, 50);
@@ -52,6 +62,7 @@ async function setupGame() {
 
   playerIdle = new PIXI.AnimatedSprite(idleFrames);
   playerRun = new PIXI.AnimatedSprite(runFrames);
+  playerJump = new PIXI.AnimatedSprite(jumpFrames);
 
   playerIdle.animationSpeed = 0.3;
   playerIdle.loop = true;
@@ -67,6 +78,13 @@ async function setupGame() {
   playerRun.y = app.screen.height - playerOffsetY;
   playerRun.scale.set(1);
 
+  playerJump.animationSpeed = 0.3;
+  playerJump.loop = false;
+  playerJump.anchor.set(0.5);
+  playerJump.x = app.screen.width / 2;
+  playerJump.y = app.screen.height - playerOffsetY;
+  playerJump.scale.set(1);
+
   currentPlayer = playerIdle;
   currentPlayer.play();
   app.stage.addChild(currentPlayer);
@@ -77,28 +95,45 @@ async function setupGame() {
   app.ticker.add(gameLoop);
 }
 
-function switchAnimation(toRun) {
-  if (toRun && currentPlayer !== playerRun) {
-    app.stage.removeChild(currentPlayer);
-    currentPlayer.stop();
+function switchAnimation(type) {
+  const prev = currentPlayer;
+  let next;
 
-    currentPlayer = playerRun;
-    currentPlayer.x = playerIdle.x;
-    currentPlayer.y = playerIdle.y;
-    currentPlayer.scale.x = playerIdle.scale.x;
-    currentPlayer.play();
-    app.stage.addChild(currentPlayer);
-  } else if (!toRun && currentPlayer !== playerIdle) {
-    app.stage.removeChild(currentPlayer);
-    currentPlayer.stop();
+  if (type === "run") next = playerRun;
+  else if (type === "jump") next = playerJump;
+  else next = playerIdle;
+  // Если уже в нужной анимации, ничего не делаем
+  if (currentPlayer === next) return;
 
-    currentPlayer = playerIdle;
-    currentPlayer.x = playerRun.x;
-    currentPlayer.y = playerRun.y;
-    currentPlayer.scale.x = playerRun.scale.x;
-    currentPlayer.play();
-    app.stage.addChild(currentPlayer);
+  app.stage.removeChild(currentPlayer);
+  currentPlayer.stop();
+
+  currentPlayer = next;
+  currentPlayer.x = prev.x;
+  currentPlayer.y = prev.y;
+  currentPlayer.scale.x = prev.scale.x;
+  currentPlayer.play();
+  app.stage.addChild(currentPlayer);
+
+  if (type !== "jump") {
+    currentPlayer.onComplete = null;
+    return;
   }
+  let reversed = false;
+
+  currentPlayer.onComplete = () => {
+    if (!reversed) {
+      // Реверс
+      reversed = true;
+      currentPlayer.textures.reverse();
+      currentPlayer.gotoAndPlay(0);
+    } else {
+      // После реверса — вернуть анимацию в нормальный порядок
+      currentPlayer.textures.reverse();
+      if (isMoving) switchAnimation("run");
+      else switchAnimation("idle");
+    }
+  };
 }
 
 function setupControls() {
@@ -107,13 +142,13 @@ function setupControls() {
     if (e.code === "ArrowRight") {
       currentPlayer.x += step;
       currentPlayer.scale.x = Math.abs(currentPlayer.scale.x);
-      switchAnimation(true);
+      switchAnimation("run");
       isMoving = true;
       moveDirection = 1;
     } else if (e.code === "ArrowLeft") {
       currentPlayer.x -= step;
       currentPlayer.scale.x = -Math.abs(currentPlayer.scale.x);
-      switchAnimation(true);
+      switchAnimation("run");
       isMoving = true;
       moveDirection = -1;
     }
@@ -121,6 +156,7 @@ function setupControls() {
     if (["ArrowUp", "KeyW", "Space"].includes(e.code) && !isJumping) {
       isJumping = true;
       velocityY = -jumpPower;
+      switchAnimation("jump");
     }
   });
 
@@ -128,14 +164,10 @@ function setupControls() {
     if (e.code === "ArrowRight" || e.code === "ArrowLeft") {
       isMoving = false;
       moveDirection = 0;
-      switchAnimation(false);
+      switchAnimation("idle");
     }
   });
 }
-
-// Для распознавания свайпа вверх
-let touchStartY = null;
-let touchStartX = null;
 
 function setupTouchControls() {
   app.view.addEventListener("pointerdown", (e) => {
@@ -146,19 +178,21 @@ function setupTouchControls() {
       currentY: e.clientY,
     });
 
-    // Тап по левой или правой половине экрана
-    if (e.clientX < app.screen.width / 2) {
-      // Лево
+    const tapX = e.clientX;
+    const playerX = currentPlayer.x;
+
+    if (tapX < playerX) {
+      // Тап слева от персонажа — идём влево
       moveDirection = -1;
       isMoving = true;
       currentPlayer.scale.x = -Math.abs(currentPlayer.scale.x);
-      switchAnimation(true);
+      switchAnimation("run");
     } else {
-      // Право
+      // Тап справа от персонажа — идём вправо
       moveDirection = 1;
       isMoving = true;
       currentPlayer.scale.x = Math.abs(currentPlayer.scale.x);
-      switchAnimation(true);
+      switchAnimation("run");
     }
   });
 
@@ -171,6 +205,7 @@ function setupTouchControls() {
   });
 
   app.view.addEventListener("pointerup", (e) => {
+    let type = "idle";
     const touch = activeTouches.get(e.pointerId);
     if (touch) {
       const dx = touch.currentX - touch.startX;
@@ -183,6 +218,8 @@ function setupTouchControls() {
         if (!isJumping) {
           isJumping = true;
           velocityY = -jumpPower;
+          type = "jump";
+          switchAnimation(type);
         }
       }
 
@@ -192,8 +229,8 @@ function setupTouchControls() {
     if (activeTouches.size === 0) {
       moveDirection = 0;
       isMoving = false;
-        switchAnimation(false);
-      }
+      switchAnimation(type);
+    }
   });
 
   app.view.addEventListener("pointercancel", (e) => {
@@ -224,4 +261,12 @@ function gameLoop(delta) {
   }
 }
 
-setupGame();
+async function run() {
+  document.getElementById("loader").style.display = "flex";
+
+  await setupGame();
+
+  document.getElementById("loader").style.display = "none";
+}
+
+run();
