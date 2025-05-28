@@ -2,10 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
     <title>Stars Game</title>
     <style>
-      html, body {
+      html,
+      body {
         margin: 0;
         padding: 0;
         overflow: hidden;
@@ -19,9 +23,39 @@
         top: 0;
         left: 0;
       }
+
+      html,
+      body,
+      canvas {
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+
+      * {
+        user-select: none;
+        -webkit-user-select: none; /* для Safari */
+        -ms-user-select: none; /* для IE/Edge */
+      }
+
+      #loader {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        height: 100vh;
+        background: #111;
+        color: #fff;
+        font-size: 24px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 9999;
+      }
     </style>
-    <script type="module" crossorigin src="/stars-game/assets/index-DzoC-khr.js"></script>
+    <script type="module" crossorigin src="/stars-game/assets/index-DVhmCe1B.js"></script>
   </head>
   <body>
+    <div id="loader">Загрузка...</div>
   </body>
 </html>
