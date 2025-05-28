@@ -12,12 +12,17 @@ const basePath = import.meta.env.BASE_URL || "/";
 const idleFrames = [];
 const runFrames = [];
 const jumpFrames = [];
+const coinFrames = [];
+const coinCollectFrames = [];
 const activeTouches = new Map();
 
 let playerIdle;
 let playerRun;
 let playerJump;
 let currentPlayer;
+const coins = [];
+let coinSpawnTimer = 0;
+const spawnInterval = 200; // чем меньше — тем чаще (кадры между спавнами)
 
 let isMoving = false;
 let moveDirection = 0; // 1 вправо, -1 влево, 0 — стоим
@@ -30,6 +35,11 @@ let isJumping = false;
 let velocityY = 0;
 const gravity = 0.8;
 const jumpPower = 15;
+
+// Счёт
+let score = 0;
+let scoreText;
+const getScoreText = (score) => `Монетки: ${score}`;
 
 async function setupGame() {
   for (let i = 1; i <= 24; i++) {
@@ -51,6 +61,20 @@ async function setupGame() {
     const path = `${basePath}assets/jump/frame_${frameNumber}.png`;
     const texture = await Assets.load(path);
     jumpFrames.push(texture);
+  }
+
+  for (let i = 1; i <= 12; i++) {
+    const frameNumber = i.toString().padStart(5, "0");
+    const path = `${basePath}assets/coin/frame_${frameNumber}.png`;
+    const texture = await Assets.load(path);
+    coinFrames.push(texture);
+  }
+
+  for (let i = 1; i <= 14; i++) {
+    const frameNumber = i.toString().padStart(5, "0");
+    const path = `${basePath}assets/coinCollect/frame_${frameNumber}.png`;
+    const texture = await Assets.load(path);
+    coinCollectFrames.push(texture);
   }
 
   const ground = new PIXI.Graphics();
@@ -88,6 +112,16 @@ async function setupGame() {
   currentPlayer = playerIdle;
   currentPlayer.play();
   app.stage.addChild(currentPlayer);
+
+  scoreText = new PIXI.Text(getScoreText(score), {
+    fontFamily: "Arial",
+    fontSize: 36,
+    fill: 0xffffff,
+    align: "left",
+  });
+  scoreText.x = 20;
+  scoreText.y = 20;
+  app.stage.addChild(scoreText);
 
   setupControls();
   setupTouchControls();
@@ -238,6 +272,19 @@ function setupTouchControls() {
   });
 }
 
+function spawnCoin() {
+  const coin = new PIXI.AnimatedSprite(coinFrames);
+  coin.animationSpeed = 0.4;
+  coin.loop = true;
+  coin.play();
+  coin.anchor.set(0.5);
+  coin.x = Math.random() * app.screen.width;
+  coin.y = -30; // чуть выше экрана
+  coin.vy = 2 + Math.random() * 2;
+  app.stage.addChild(coin);
+  coins.push(coin);
+}
+
 function gameLoop(delta) {
   const step = 5;
 
@@ -257,6 +304,39 @@ function gameLoop(delta) {
       currentPlayer.y = groundY;
       isJumping = false;
       velocityY = 0;
+    }
+  }
+
+  // Обработка спавна монеток
+  coinSpawnTimer++;
+  if (coinSpawnTimer >= spawnInterval) {
+    coinSpawnTimer = 0;
+    spawnCoin();
+  }
+
+  // Обработка падения монеток
+  for (let i = coins.length - 1; i >= 0; i--) {
+    const coin = coins[i];
+    coin.y += coin.vy;
+
+    // Столкновение с игроком
+    const dx = coin.x - currentPlayer.x;
+    const dy = coin.y - currentPlayer.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    const hitRadius = 50;
+
+    if (distance < hitRadius) {
+      app.stage.removeChild(coin);
+      coins.splice(i, 1);
+      score++;
+      scoreText.text = getScoreText(score);
+      continue;
+    }
+
+    // Касание земли
+    if (coin.y >= app.screen.height - 50) {
+      app.stage.removeChild(coin);
+      coins.splice(i, 1);
     }
   }
 }
